@@ -76,6 +76,13 @@
 		5E6010B00000000000000002 /* TileGridLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E6010B00000000000000001 /* TileGridLayout.swift */; };
 		5E6010B00000000000000003 /* TileGridLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E6010B00000000000000001 /* TileGridLayout.swift */; };
 		5E6010B00000000000000102 /* TileGridLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E6010B00000000000000101 /* TileGridLayoutTests.swift */; };
+		5E8C01000000000000000002 /* WindowScreenMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8C01000000000000000001 /* WindowScreenMove.swift */; };
+		5E8C01000000000000000003 /* WindowScreenMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8C01000000000000000001 /* WindowScreenMove.swift */; };
+		5E8C01000000000000000012 /* WindowScreenMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8C01000000000000000011 /* WindowScreenMoveTests.swift */; };
+		5E8C02000000000000000002 /* ScreenColumnLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8C02000000000000000001 /* ScreenColumnLayout.swift */; };
+		5E8C02000000000000000003 /* ScreenColumnLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8C02000000000000000001 /* ScreenColumnLayout.swift */; };
+		5E8C02000000000000000012 /* ScreenColumnLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8C02000000000000000011 /* ScreenColumnLayoutTests.swift */; };
+		5E8C03000000000000000002 /* ScreenColumnChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8C03000000000000000001 /* ScreenColumnChrome.swift */; };
 		5E7115000000000000000002 /* TilePool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7115000000000000000001 /* TilePool.swift */; };
 		5E7115000000000000000003 /* TilePool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7115000000000000000001 /* TilePool.swift */; };
 		5E7115000000000000000102 /* TilePoolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7115000000000000000101 /* TilePoolTests.swift */; };
@@ -557,6 +564,11 @@
 		5E6010A00000000000000101 /* WindowTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTitleTests.swift; sourceTree = "<group>"; };
 		5E6010B00000000000000001 /* TileGridLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileGridLayout.swift; sourceTree = "<group>"; };
 		5E6010B00000000000000101 /* TileGridLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileGridLayoutTests.swift; sourceTree = "<group>"; };
+		5E8C01000000000000000001 /* WindowScreenMove.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowScreenMove.swift; sourceTree = "<group>"; };
+		5E8C01000000000000000011 /* WindowScreenMoveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowScreenMoveTests.swift; sourceTree = "<group>"; };
+		5E8C02000000000000000001 /* ScreenColumnLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenColumnLayout.swift; sourceTree = "<group>"; };
+		5E8C02000000000000000011 /* ScreenColumnLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenColumnLayoutTests.swift; sourceTree = "<group>"; };
+		5E8C03000000000000000001 /* ScreenColumnChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenColumnChrome.swift; sourceTree = "<group>"; };
 		5E7115000000000000000001 /* TilePool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilePool.swift; sourceTree = "<group>"; };
 		5E7115000000000000000101 /* TilePoolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilePoolTests.swift; sourceTree = "<group>"; };
 		5E7115000000000000000201 /* TilePoolSpecs.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TilePoolSpecs.md; sourceTree = "<group>"; };
@@ -1231,6 +1243,8 @@
 				5A220000000000000000A101 /* WindowAdmissionResolverTests.swift */,
 				5F791E4A2F1C65E100B6419C /* ApplicationDiscriminator.swift */,
 				5F906A332F16A18000B99924 /* Screens.swift */,
+				5E8C01000000000000000001 /* WindowScreenMove.swift */,
+				5E8C01000000000000000011 /* WindowScreenMoveTests.swift */,
 				D04BA7CF9C2D1BEC7C05AB24 /* Spaces.swift */,
 				5E1EC110000000000000C001 /* SelectionResolver.swift */,
 				5E5EA12C0000000000000001 /* SearchModeResolver.swift */,
@@ -1719,6 +1733,9 @@
 				D04BAA998119CAA8B70A2B67 /* TilesView.swift */,
 				5E6010B00000000000000001 /* TileGridLayout.swift */,
 				5E6010B00000000000000101 /* TileGridLayoutTests.swift */,
+				5E8C02000000000000000001 /* ScreenColumnLayout.swift */,
+				5E8C02000000000000000011 /* ScreenColumnLayoutTests.swift */,
+				5E8C03000000000000000001 /* ScreenColumnChrome.swift */,
 				5E7115000000000000000001 /* TilePool.swift */,
 				5E7115000000000000000201 /* TilePoolSpecs.md */,
 				5E7115000000000000000101 /* TilePoolTests.swift */,
@@ -2251,6 +2268,10 @@
 				5E6010A00000000000000102 /* WindowTitleTests.swift in Sources */,
 				5E6010B00000000000000003 /* TileGridLayout.swift in Sources */,
 				5E6010B00000000000000102 /* TileGridLayoutTests.swift in Sources */,
+				5E8C02000000000000000003 /* ScreenColumnLayout.swift in Sources */,
+				5E8C02000000000000000012 /* ScreenColumnLayoutTests.swift in Sources */,
+				5E8C01000000000000000003 /* WindowScreenMove.swift in Sources */,
+				5E8C01000000000000000012 /* WindowScreenMoveTests.swift in Sources */,
 				5E7115000000000000000003 /* TilePool.swift in Sources */,
 				5E7115000000000000000102 /* TilePoolTests.swift in Sources */,
 				5E5EA12D0000000000000003 /* ShortcutModifierResolver.swift in Sources */,
@@ -2374,6 +2395,9 @@
 				5E5EA12F0000000000000002 /* SearchFieldEditing.swift in Sources */,
 				5E6010A00000000000000002 /* WindowTitle.swift in Sources */,
 				5E6010B00000000000000002 /* TileGridLayout.swift in Sources */,
+				5E8C02000000000000000002 /* ScreenColumnLayout.swift in Sources */,
+				5E8C03000000000000000002 /* ScreenColumnChrome.swift in Sources */,
+				5E8C01000000000000000002 /* WindowScreenMove.swift in Sources */,
 				5E7115000000000000000002 /* TilePool.swift in Sources */,
 				5E5EA12D0000000000000002 /* ShortcutModifierResolver.swift in Sources */,
 				5F5849A900000000000000A2 /* BruteForceWindowMatch.swift in Sources */,

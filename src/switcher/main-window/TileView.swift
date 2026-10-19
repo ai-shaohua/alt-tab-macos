@@ -4,6 +4,10 @@ class TileView: FlippedView {
     static let noOpenWindowToolTip = NSLocalizedString("App is running but has no open window", comment: "")
     // when calculating the width of a nstextfield, somehow we need to add this suffix to get the correct width
     static let extraTextForPadding = "lmnopqrstuvw"
+    /// While the switcher is drawn as one column per screen, a cell is narrowed to this width before
+    /// it measures itself. The thumbnail max is a fraction of the whole panel; a column is a fraction
+    /// of that, and a titles-style cell is wider than its column until this cap is applied.
+    static var screenColumnWidthCap: CGFloat?
 
     var window_: Window?
     var thumbnail = LightImageLayer()
@@ -631,6 +635,7 @@ class TileView: FlippedView {
     }
 
     private func setFrameWidthHeight(_ newHeight: CGFloat) {
+        capThumbnailToScreenColumn()
         var contentWidth = CGFloat(0)
         if Preferences.effectiveAppearanceStyle(SwitcherSession.activeShortcutIndex) == .thumbnails {
             // Preferred to the width of the image, and the minimum width may be set to be large.
@@ -642,9 +647,20 @@ class TileView: FlippedView {
         }
         let frameWidth = (contentWidth + Appearance.edgeInsetsSize * 2).rounded()
         let widthMin = TileView.minThumbnailWidth()
-        let width = max(frameWidth, widthMin).rounded()
+        var width = max(frameWidth, widthMin).rounded()
+        if let cap = TileView.screenColumnWidthCap { width = min(width, cap) }
         assignIfDifferent(&frame.size.width, width)
         assignIfDifferent(&frame.size.height, newHeight)
+    }
+
+    private func capThumbnailToScreenColumn() {
+        guard Preferences.effectiveAppearanceStyle(SwitcherSession.activeShortcutIndex) == .thumbnails,
+              let cap = TileView.screenColumnWidthCap else { return }
+        let contentMax = max(0, cap - Appearance.edgeInsetsSize * 2)
+        guard thumbnail.frame.width > contentMax, thumbnail.frame.width > 0 else { return }
+        let scale = contentMax / thumbnail.frame.width
+        thumbnail.frame.size.width = contentMax
+        thumbnail.frame.size.height = (thumbnail.frame.height * scale).rounded()
     }
 
     private func getAccessibilityHelp(_ appName: String?, _ dockLabel: String?) -> String {

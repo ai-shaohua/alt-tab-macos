@@ -348,6 +348,106 @@ class Window {
         }
     }
 
+    /// Screen a drag assigned this window to, until `updateScreenId` agrees. The move itself is an AX
+    /// write that lands after the fullscreen animation, so the column layout would keep the tile on the
+    /// old screen until then.
+    static var pendingScreenMoves = [CGWindowID: ScreenUuid]()
+
+    func layoutScreenId() -> ScreenUuid? {
+        if let wid = cgWindowId, let pending = Self.pendingScreenMoves[wid] { return pending }
+        return screenId
+    }
+
+    func moveToScreen(_ screen: NSScreen) {
+        let target = referenceWindowForTabbedWindow() ?? self
+        guard target === self else { target.moveOnto(screen, dragged: self); return }
+        moveOnto(screen, dragged: nil)
+    }
+
+    private func moveOnto(_ screen: NSScreen, dragged: Window?) {
+        guard !self.isWindowlessApp, let uuid = screen.cachedUuid(), axUiElement != nil || altTabWindow() != nil else {
+            NSSound.beep()
+            refreshOpenSwitcher()
+            return
+        }
+        if let wid = cgWindowId { Self.pendingScreenMoves[wid] = uuid }
+        if let dragged, let draggedWid = dragged.cgWindowId, draggedWid != cgWindowId { Self.pendingScreenMoves[draggedWid] = uuid }
+        if let altTabWindow = altTabWindow() {
+            moveAltTabWindow(altTabWindow, to: screen)
+        } else if let element = axUiElement {
+            moveAxWindow(element, to: screen)
+        }
+        refreshOpenSwitcher()
+    }
+
+    private func refreshOpenSwitcher() {
+        guard SwitcherSession.isActive else { return }
+        App.refreshUi(true)
+    }
+
+    private func cocoaVisibleFrame(_ screen: NSScreen) -> CGRect {
+        screen.visibleFrame.isEmpty ? screen.frame : screen.visibleFrame
+    }
+
+    private func moveAxWindow(_ element: AXUIElement, to screen: NSScreen) {
+        let primaryMaxY = NSScreen.screens.first?.frame.maxY ?? screen.frame.maxY
+        let target = WindowScreenMove.quartzFrame(cocoa: cocoaVisibleFrame(screen), primaryMaxY: primaryMaxY)
+        let source = screenId.flatMap { Screens.all[$0] }.map { WindowScreenMove.quartzFrame(cocoa: cocoaVisibleFrame($0), primaryMaxY: primaryMaxY) }
+        let point = WindowScreenMove.position(windowOrigin: self.position, windowSize: self.size ?? .zero, from: source, to: target)
+        scheduleAxSteps(WindowScreenMove.steps(isFullscreen: self.isFullscreen, isMinimized: self.isMinimized, position: point), element)
+    }
+
+    private func scheduleAxSteps(_ steps: [WindowScreenMove.Step], _ element: AXUIElement) {
+        scheduleAxStep(0, steps, element, after: 0)
+    }
+
+    /// Each step is queued only after the previous one has returned, plus `pauseAfter` — a concurrent
+    /// queue would otherwise run the position write while the fullscreen exit was still in flight.
+    private func scheduleAxStep(_ index: Int, _ steps: [WindowScreenMove.Step], _ element: AXUIElement, after delay: TimeInterval) {
+        guard index < steps.count else { return }
+        let run = { [weak self] in
+            guard let self else { return }
+            Self.applyAxStep(steps[index], element)
+            self.scheduleAxStep(index + 1, steps, element, after: WindowScreenMove.pauseAfter(steps[index]))
+        }
+        if delay == 0 {
+            BackgroundWork.accessibilityCommandsQueue.addOperation(run)
+        } else {
+            BackgroundWork.accessibilityCommandsQueue.addOperationAfter(deadline: .now() + delay, block: run)
+        }
+    }
+
+    private static func applyAxStep(_ step: WindowScreenMove.Step, _ element: AXUIElement) {
+        switch step {
+            case .deminiaturize: try? element.setAttribute(kAXMinimizedAttribute, false)
+            case .exitFullscreen: try? element.setAttribute(kAXFullscreenAttribute, false)
+            case .enterFullscreen: try? element.setAttribute(kAXFullscreenAttribute, true)
+            case .setPosition(let point):
+                var point = point
+                guard let value = AXValueCreate(.cgPoint, &point) else { return }
+                try? element.setAttribute(kAXPositionAttribute, value)
+        }
+    }
+
+    private func moveAltTabWindow(_ window: NSWindow, to screen: NSScreen) {
+        let primaryMaxY = NSScreen.screens.first?.frame.maxY ?? screen.frame.maxY
+        let target = WindowScreenMove.quartzFrame(cocoa: cocoaVisibleFrame(screen), primaryMaxY: primaryMaxY)
+        let source = window.screen.map { WindowScreenMove.quartzFrame(cocoa: cocoaVisibleFrame($0), primaryMaxY: primaryMaxY) }
+        let quartzTopLeft = WindowScreenMove.quartzFrame(cocoa: window.frame, primaryMaxY: primaryMaxY).origin
+        let point = WindowScreenMove.position(windowOrigin: quartzTopLeft, windowSize: window.frame.size, from: source, to: target)
+        let cocoa = WindowScreenMove.cocoaOrigin(quartzTopLeft: point, windowHeight: window.frame.size.height, primaryMaxY: primaryMaxY)
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        guard window.styleMask.contains(.fullScreen) else { window.setFrameOrigin(cocoa); return }
+        window.toggleFullScreen(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + WindowScreenMove.animationDelay) {
+            window.setFrameOrigin(cocoa)
+            DispatchQueue.main.asyncAfter(deadline: .now() + WindowScreenMove.animationDelay) {
+                guard !window.styleMask.contains(.fullScreen) else { return }
+                window.toggleFullScreen(nil)
+            }
+        }
+    }
+
     /// `onFronted` runs on main once step 1 has fronted the target (see `TilesPanel.orderOutOnceFronted`).
     func focus(_ onFronted: @escaping () -> Void = {}) {
         MainThreadStall.step()
@@ -662,6 +762,8 @@ class Window {
     /// — an `NSScreen`-coupled derivation the pure layer can't do.
     func updateScreenId() {
         screenId = NSScreen.screens.first { isOnScreen($0) }?.cachedUuid()
+        guard let wid = cgWindowId, let pending = Self.pendingScreenMoves[wid], pending == screenId else { return }
+        Self.pendingScreenMoves[wid] = nil
     }
 
     /// window may not be visible on that screen (e.g. the window is not on the current Space)

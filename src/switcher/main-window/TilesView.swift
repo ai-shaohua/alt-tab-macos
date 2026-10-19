@@ -25,6 +25,11 @@ class TilesView {
     static var layoutCache = LayoutCache()
     static var thumbnailUnderLayer = TileUnderLayer()
     static var thumbnailOverView = TileOverView()
+    static let screenColumnChrome = ScreenColumnChrome()
+    static var screenColumnFrames = [CGRect]()
+    static var screenColumnScreens = [NSScreen]()
+    private static var usingScreenColumns = false
+    private static var placedColumns = [ScreenColumnLayout.PlacedColumn]()
     private static var initialized = false
 
     static func initialize() {
@@ -459,7 +464,7 @@ class TilesView {
         }
         if let (maxX, maxY, labelHeight, rowSignature) = layoutTileViews(widthMax) {
             layoutParentViews(maxX, widthMax, maxY, labelHeight)
-            centerRows(TilesView.thumbnailsWidth)
+            if !usingScreenColumns { centerRows(TilesView.thumbnailsWidth) }
             if rowSignature != lastRowSignature {
                 for row in rows {
                     for (j, view) in row.enumerated() {
@@ -505,7 +510,9 @@ class TilesView {
 
     private static func dryRunLayoutTileViews(_ widthMax: CGFloat) -> CGFloat {
         let height = TileView.height(Self.layoutCache.labelHeight)
+        prepareScreenColumnCap(widthMax)
         let tiles = fillTiles(height).tiles
+        if let columns = screenColumnResult(tiles, height, widthMax) { return columns.result.maxY }
         return TileGridLayout.compute(gridInput(tiles, height, widthMax)).maxY
     }
 
@@ -544,9 +551,14 @@ class TilesView {
     private static func layoutTileViews(_ widthMax: CGFloat) -> (CGFloat, CGFloat, CGFloat, [Int])? {
         let labelHeight = Self.layoutCache.labelHeight
         let height = TileView.height(labelHeight)
+        prepareScreenColumnCap(widthMax)
         let filled = fillTiles(height)
         guard !filled.aborted else { return nil }
         let tiles = filled.tiles
+        if let columns = screenColumnResult(tiles, height, widthMax) {
+            return applyScreenColumns(columns.result, columns.screens, tiles, labelHeight)
+        }
+        clearScreenColumns()
         let layout = TileGridLayout.compute(gridInput(tiles, height, widthMax))
         for (position, tile) in tiles.enumerated() {
             tile.view.frame.origin = layout.origins[position]
@@ -555,18 +567,122 @@ class TilesView {
         for (rowIndex, row) in layout.rows.enumerated() {
             for position in row { Windows.list[tiles[position].index].rowIndex = rowIndex }
         }
-        let newViews = tiles.map { $0.view }
-        let rowSignature = tiles.map { $0.index }
-        let maxX = layout.maxX
-        let maxY = layout.maxY
-        scrollView.documentView!.subviews = newViews
-        scrollView.documentView!.addSubview(thumbnailOverView)
+        installTileSubviews(tiles.map { $0.view })
+        return (layout.maxX, layout.maxY, labelHeight, tiles.map { $0.index })
+    }
+
+    private struct SwitcherScreen {
+        var screen: NSScreen
+        var model: ScreenColumnLayout.Screen
+    }
+
+    /// Left to right, matching `ScreenColumnLayout.ordered`.
+    private static func orderedSwitcherScreens() -> [SwitcherScreen] {
+        let raw: [SwitcherScreen] = NSScreen.screens.compactMap { screen in
+            guard let uuid = screen.cachedUuid() else { return nil }
+            let reported = screen.localizedName
+            let name = reported.isEmpty ? NSLocalizedString("Screen", comment: "Display name when the screen has none") : reported
+            return SwitcherScreen(screen: screen, model: ScreenColumnLayout.Screen(id: uuid as String, name: name,
+                originX: screen.frame.minX, originY: screen.frame.minY))
+        }
+        return ScreenColumnLayout.ordered(raw.map { $0.model }).compactMap { model in raw.first { $0.model.id == model.id } }
+    }
+
+    private static func prepareScreenColumnCap(_ widthMax: CGFloat) {
+        let count = orderedSwitcherScreens().count
+        guard ScreenColumnLayout.usesColumns(screenCount: count, showsAllScreens: showsAllScreens()) else {
+            TileView.screenColumnWidthCap = nil
+            return
+        }
+        let columnWidth = ScreenColumnLayout.columnWidthMax(panelWidthMax: widthMax, columnCount: count, columnGap: ScreenColumnLayout.columnGap)
+        TileView.screenColumnWidthCap = max(0, columnWidth - 2 * Appearance.interCellPadding)
+    }
+
+    private static func showsAllScreens() -> Bool {
+        Preferences.screensToShow[SwitcherSession.activeShortcutIndex] == .all
+    }
+
+    private static func screenColumnResult(_ tiles: [(index: Int, view: TileView)], _ height: CGFloat, _ widthMax: CGFloat) -> (result: ScreenColumnLayout.Result, screens: [NSScreen])? {
+        let screens = orderedSwitcherScreens()
+        guard ScreenColumnLayout.usesColumns(screenCount: screens.count, showsAllScreens: showsAllScreens()) else { return nil }
+        let names = ScreenColumnLayout.displayNames(screens.map { $0.model.name })
+        let groups = ScreenColumnLayout.groups(tileScreenIds: tiles.map { tileScreenId($0.index) }, screens: screens.map { $0.model })
+        let widthByIndex = Dictionary(uniqueKeysWithValues: tiles.map { ($0.index, $0.view.frame.width) })
+        let columnWidth = ScreenColumnLayout.columnWidthMax(panelWidthMax: widthMax, columnCount: screens.count, columnGap: ScreenColumnLayout.columnGap)
+        let columns = groups.enumerated().map { index, tileIndexes in
+            ScreenColumnLayout.ColumnInput(name: names[index], tileIndexes: tileIndexes, tileWidths: tileIndexes.map { widthByIndex[$0] ?? 0 })
+        }
+        let input = ScreenColumnLayout.Input(columns: columns, tileHeight: height, padding: Appearance.interCellPadding,
+            headerHeight: ScreenColumnLayout.headerHeight, columnGap: ScreenColumnLayout.columnGap, columnWidthMax: columnWidth)
+        return (ScreenColumnLayout.compute(input), screens.map { $0.screen })
+    }
+
+    private static func tileScreenId(_ index: Int) -> String? {
+        guard index < Windows.list.count else { return nil }
+        return Windows.list[index].layoutScreenId().map { $0 as String }
+    }
+
+    private static func applyScreenColumns(_ result: ScreenColumnLayout.Result, _ screens: [NSScreen], _ tiles: [(index: Int, view: TileView)], _ labelHeight: CGFloat) -> (CGFloat, CGFloat, CGFloat, [Int]) {
+        var viewsByIndex = [Int: TileView]()
+        for tile in tiles { viewsByIndex[tile.index] = tile.view }
+        for (index, origin) in result.origins {
+            guard let view = viewsByIndex[index] else { continue }
+            view.frame.origin = origin
+            if let width = result.widths[index] { assignIfDifferent(&view.frame.size.width, width) }
+        }
+        rows = result.rows.map { $0.compactMap { viewsByIndex[$0] } }
+        for (rowIndex, row) in result.rows.enumerated() {
+            for index in row where index < Windows.list.count { Windows.list[index].rowIndex = rowIndex }
+        }
+        usingScreenColumns = true
+        screenColumnScreens = screens
+        placedColumns = result.columns
+        installTileSubviews(tiles.map { $0.view })
+        return (result.maxX, result.maxY, labelHeight, tiles.map { $0.index })
+    }
+
+    private static func clearScreenColumns() {
+        usingScreenColumns = false
+        screenColumnFrames = []
+        screenColumnScreens = []
+        placedColumns = []
+        screenColumnChrome.highlight(nil)
+        screenColumnChrome.isHidden = true
+    }
+
+    private static func placeScreenColumnChrome(_ docSize: NSSize, _ xOffset: CGFloat) {
+        guard usingScreenColumns else {
+            screenColumnChrome.isHidden = true
+            screenColumnFrames = []
+            return
+        }
+        screenColumnChrome.isHidden = false
+        screenColumnChrome.frame = CGRect(origin: .zero, size: docSize)
+        screenColumnChrome.show(placedColumns, xOffset: xOffset)
+        screenColumnFrames = placedColumns.map { $0.frame.offsetBy(dx: xOffset, dy: 0) }
+    }
+
+    private static func installTileSubviews(_ views: [NSView]) {
+        let doc = scrollView.documentView!
+        doc.subviews = views
+        if usingScreenColumns {
+            doc.addSubview(screenColumnChrome, positioned: .below, relativeTo: views.first)
+        }
+        doc.addSubview(thumbnailOverView)
         thumbnailOverView.scrollView = scrollView
-        let docLayer = scrollView.documentView!.layer!
+        let docLayer = doc.layer!
         if thumbnailUnderLayer.superlayer !== docLayer {
             docLayer.insertSublayer(thumbnailUnderLayer, at: 0)
         }
-        return (maxX, maxY, labelHeight, rowSignature)
+    }
+
+    static func screen(forColumn index: Int) -> NSScreen? {
+        guard index >= 0, index < screenColumnScreens.count else { return nil }
+        return screenColumnScreens[index]
+    }
+
+    static func screenColumn(at point: CGPoint) -> Int? {
+        ScreenColumnLayout.dropIndex(at: point, columns: screenColumnFrames)
     }
 
     private static func layoutParentViews(_ maxX: CGFloat, _ widthMax: CGFloat, _ maxY: CGFloat, _ labelHeight: CGFloat) {
@@ -609,14 +725,17 @@ class TilesView {
         } else if searchField.superview != nil {
             searchField.removeFromSuperview()
         }
+        var columnXOffset = CGFloat(0)
         if App.shared.userInterfaceLayoutDirection == .rightToLeft {
             let croppedWidth = max(0, TilesView.thumbnailsWidth - maxX)
+            columnXOffset = -croppedWidth
             scrollView.documentView!.subviews.forEach { $0.frame.origin.x -= croppedWidth }
         }
         scrollView.documentView!.frame.size = NSSize(width: maxX, height: maxY)
         let docSize = scrollView.documentView!.frame.size
         thumbnailOverView.frame = CGRect(origin: .zero, size: docSize)
         thumbnailUnderLayer.frame = CGRect(origin: .zero, size: docSize)
+        placeScreenColumnChrome(docSize, columnXOffset)
         let isEmpty = maxX == 0
         noWindowLabel.isHidden = !isEmpty
         if isEmpty {
