@@ -2,24 +2,13 @@
 
 ## 本地能直接跑的
 
-Debug 构建，产物可以直接拷去安装：
+一键编译并装进「应用程序」（补 `config/local.xcconfig` 里的版本号、Debug 构建、退出正在运行的 AltTab、删掉旧包再整包拷入，然后打开）：
 
 ```bash
-scripts/codesign/setup_local.sh   # 只需一次，生成本地自签名证书
-ai/build.sh
+ai/install.sh
 ```
 
-生成的 app 在：
-
-```
-DerivedData/Build/Products/Debug/AltTab.app
-```
-
-拷到「应用程序」即可：
-
-```bash
-cp -R DerivedData/Build/Products/Debug/AltTab.app /Applications/
-```
+`config/local.xcconfig` 是 gitignore 的。没有 `CURRENT_PROJECT_VERSION` 时，`CFBundleVersion` 不会写进包里，启动时会在 `App.swift` 强制解包处直接退出。往已经存在的 `/Applications/AltTab.app` 里 `cp -R` 也会在框架文件上报 `Operation not permitted`，所以脚本是先 `rm -rf` 再 `ditto`。
 
 第一次打开要在系统设置里授予辅助功能和屏幕录制权限。
 
