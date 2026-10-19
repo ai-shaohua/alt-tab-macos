@@ -20,6 +20,11 @@ enum ProFeature: Equatable, Hashable {
     /// free pass — the user is mid-session with one Pro summon, so search and extra-shortcut
     /// chords inside that session must work without firing [C] inline.
     func attemptUse() -> Bool {
+        // Debug builds open in-switcher search without a trial or license, so local experiments
+        // don't depend on either.
+        // #if DEBUG
+        if case .searchInSwitcher = self { return true }
+        // #endif
         if LicenseManager.shared.isProAvailable { return true }
         if ProTransitionManager.shared.isFreePassSessionActive { return true }
         switch self {
