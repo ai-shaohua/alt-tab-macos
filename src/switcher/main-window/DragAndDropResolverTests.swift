@@ -70,6 +70,19 @@ final class DragAndDropResolverTests: XCTestCase {
         XCTAssertFalse(DragAndDropResolver.passesThroughMouseUp(mouseDownWasSeen: true))
     }
 
+    func testOutsideClickDismisses() {
+        XCTAssertEqual(DragAndDropResolver.outsideRelease(crossedDragThreshold: false, releasedInside: false), .dismiss)
+    }
+
+    func testOutsideDragIsYielded() {
+        XCTAssertEqual(DragAndDropResolver.outsideRelease(crossedDragThreshold: true, releasedInside: false), .yield)
+        XCTAssertEqual(DragAndDropResolver.outsideRelease(crossedDragThreshold: true, releasedInside: true), .yield)
+    }
+
+    func testOutsidePressReleasedOverThePanelIsYielded() {
+        XCTAssertEqual(DragAndDropResolver.outsideRelease(crossedDragThreshold: false, releasedInside: true), .yield)
+    }
+
     // MARK: - D. Drop validity
 
     func testDropNeedsTargetWindowBundleAndUrls() {

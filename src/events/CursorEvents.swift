@@ -11,6 +11,10 @@ class CursorEvents {
     /// each show). A drag from another app started before the switcher showed, so its down was never seen —
     /// that is how `handleLeftMouseUp` recognizes a drop's up and yields it (see `DragAndDropResolver`).
     private static var sawLeftMouseDown = false
+    /// A press that started outside the panel. Its down is delivered, not deleted, so the other app can
+    /// begin a drag onto the tiles. `dragged` flips once the pointer clears the same 5pt threshold a tile
+    /// drag uses; a shorter press is a click and dismisses on release.
+    private static var outsidePress: (down: CGPoint, dragged: Bool)?
     private static var tileDrag: TileDrag?
     static var deadZoneInitialPosition: CGPoint?
     static var isAllowedToMouseHover = true
@@ -21,6 +25,7 @@ class CursorEvents {
         if !enabled {
             deadZoneInitialPosition = nil
             tileDrag = nil
+            outsidePress = nil
             Window.pendingScreenMoves.removeAll()
             TilesView.screenColumnChrome.highlight(nil)
         } else {
@@ -70,29 +75,54 @@ class CursorEvents {
     }
 
     private static func handleLeftMouseDown(_ cgEvent: CGEvent) -> Unmanaged<CGEvent>? {
-        sawLeftMouseDown = true // this gesture's down is ours; its up is a click, not a foreign drop
         if searchHintClick.begin(inside: SearchDiscoveryHint.shared.containsMouseLocation) {
             mouseDownTarget = nil
             mouseDownInsideSearchField = false
             return Unmanaged.passUnretained(cgEvent)
         }
-        if TilesView.hasMarkedText() || ContextMenuEvents.isMenuOpen { return Unmanaged.passUnretained(cgEvent) }
+        if TilesView.hasMarkedText() || ContextMenuEvents.isMenuOpen {
+            sawLeftMouseDown = true
+            return Unmanaged.passUnretained(cgEvent)
+        }
         if isPointerInsideSearchField() {
+            sawLeftMouseDown = true
             mouseDownInsideSearchField = true
             return Unmanaged.passUnretained(cgEvent)
         }
         mouseDownInsideSearchField = false
-        guard isPointerInsideUi() else { tileDrag = nil; return nil }
+        guard isPointerInsideUi() else { return beginOutsidePress(cgEvent) }
+        sawLeftMouseDown = true
+        outsidePress = nil
         mouseDownTarget = (findButtonUnderPointer() ?? findTileViewUnderPointer()) as AnyObject?
         tileDrag = nil
-        if let tile = mouseDownTarget as? TileView { armTileDrag(tile) }
+        if let tile = mouseDownTarget as? TileView { armTileDrag(tile, cgEvent) }
         return nil
     }
 
+    /// Deleting this down would also delete the drag: the other app never sees the press, so a file
+    /// cannot be picked up while the switcher is already showing.
+    private static func beginOutsidePress(_ cgEvent: CGEvent) -> Unmanaged<CGEvent>? {
+        tileDrag = nil
+        sawLeftMouseDown = false
+        outsidePress = (cgEvent.location, false)
+        return Unmanaged.passUnretained(cgEvent)
+    }
+
     private static func handleLeftMouseDragged(_ cgEvent: CGEvent) -> Unmanaged<CGEvent>? {
+        if markOutsidePressDragged(cgEvent) { return Unmanaged.passUnretained(cgEvent) }
         guard tileDrag != nil else { return Unmanaged.passUnretained(cgEvent) }
-        updateTileDrag()
-        return nil
+        updateTileDrag(cgEvent)
+        // Delivered, not deleted: the tile's new frame commits with this event. The down was already
+        // deleted, so the drag does not become a click.
+        return Unmanaged.passUnretained(cgEvent)
+    }
+
+    private static func markOutsidePressDragged(_ cgEvent: CGEvent) -> Bool {
+        guard var press = outsidePress else { return false }
+        guard !press.dragged, ScreenColumnLayout.crossedDragThreshold(from: press.down, to: cgEvent.location) else { return true }
+        press.dragged = true
+        outsidePress = press
+        return true
     }
 
     private static func handleLeftMouseUp(_ cgEvent: CGEvent) -> Unmanaged<CGEvent>? {
@@ -100,6 +130,13 @@ class CursorEvents {
         sawLeftMouseDown = false
         if searchHintClick.end(inside: SearchDiscoveryHint.shared.containsMouseLocation) {
             mouseDownTarget = nil
+            return Unmanaged.passUnretained(cgEvent)
+        }
+        if let press = outsidePress {
+            outsidePress = nil
+            if DragAndDropResolver.outsideRelease(crossedDragThreshold: press.dragged, releasedInside: isPointerInsideUi()) == .dismiss {
+                App.hideUi()
+            }
             return Unmanaged.passUnretained(cgEvent)
         }
         // a drag from another app ends with a leftMouseUp whose matching down we never saw (it happened
@@ -116,7 +153,7 @@ class CursorEvents {
         }
         if tileDrag != nil {
             let wasDragging = tileDrag?.dragging == true
-            finishTileDrag()
+            finishTileDrag(cgEvent)
             if wasDragging {
                 mouseDownTarget = nil
                 return nil
@@ -169,6 +206,10 @@ class CursorEvents {
     }
 
     private static func handleMouseMoved(_ cgEvent: CGEvent) -> Unmanaged<CGEvent>? {
+        if tileDrag != nil {
+            updateTileDrag(cgEvent)
+            return Unmanaged.passUnretained(cgEvent)
+        }
         if isAllowedToReactToPointerMovement(cgEvent.location) {
             TilesView.thumbnailOverView.updateHover()
         }
@@ -189,37 +230,46 @@ class CursorEvents {
         var tile: TileView
         var window: Window
         var sourceColumn: Int
-        var down: CGPoint
+        var downQuartz: CGPoint
+        var downInDocument: CGPoint
         var origin: CGPoint
         var dragging: Bool
     }
 
-    private static func armTileDrag(_ tile: TileView) {
+    private static func armTileDrag(_ tile: TileView, _ cgEvent: CGEvent) {
         guard !TilesView.screenColumnFrames.isEmpty, let window = tile.window_ else { return }
-        let down = pointerInDocument()
+        let downInDocument = TilesView.thumbnailOverView.convert(pointerLocationInWindow(), from: nil)
         let center = CGPoint(x: tile.frame.midX, y: tile.frame.midY)
         let source = ScreenColumnLayout.dropIndex(at: center, columns: TilesView.screenColumnFrames) ?? 0
-        tileDrag = TileDrag(tile: tile, window: window, sourceColumn: source, down: down, origin: tile.frame.origin, dragging: false)
+        tileDrag = TileDrag(tile: tile, window: window, sourceColumn: source, downQuartz: cgEvent.location,
+            downInDocument: downInDocument, origin: tile.frame.origin, dragging: false)
     }
 
-    private static func updateTileDrag() {
+    private static func updateTileDrag(_ cgEvent: CGEvent) {
         guard var session = tileDrag else { return }
-        let current = pointerInDocument()
-        guard session.dragging || ScreenColumnLayout.crossedDragThreshold(from: session.down, to: current) else { return }
-        session.dragging = true
+        let current = pointInDocument(session, cgEvent)
+        guard session.dragging || ScreenColumnLayout.crossedDragThreshold(from: session.downInDocument, to: current) else { return }
+        if !session.dragging {
+            session.dragging = true
+            session.tile.superview?.addSubview(session.tile)
+        }
         tileDrag = session
-        session.tile.frame.origin = CGPoint(x: session.origin.x + current.x - session.down.x, y: session.origin.y + current.y - session.down.y)
-        session.tile.superview?.addSubview(session.tile, positioned: .below, relativeTo: TilesView.thumbnailOverView)
+        let origin = CGPoint(x: session.origin.x + current.x - session.downInDocument.x, y: session.origin.y + current.y - session.downInDocument.y)
+        caTransaction {
+            session.tile.alphaValue = 0.75
+            session.tile.frame.origin = origin
+        }
         TilesView.screenColumnChrome.highlight(TilesView.screenColumn(at: current))
         TilesView.thumbnailOverView.hideWindowControls()
     }
 
-    private static func finishTileDrag() {
+    private static func finishTileDrag(_ cgEvent: CGEvent) {
         guard let session = tileDrag else { return }
         tileDrag = nil
+        caTransaction { session.tile.alphaValue = 1 }
         TilesView.screenColumnChrome.highlight(nil)
         guard session.dragging else { return }
-        let destination = TilesView.screenColumn(at: pointerInDocument())
+        let destination = TilesView.screenColumn(at: pointInDocument(session, cgEvent))
         if let destination, destination != session.sourceColumn, let screen = TilesView.screen(forColumn: destination) {
             session.window.moveToScreen(screen)
         } else if SwitcherSession.isActive {
@@ -227,8 +277,12 @@ class CursorEvents {
         }
     }
 
-    private static func pointerInDocument() -> NSPoint {
-        TilesView.thumbnailOverView.convert(pointerLocationInWindow(), from: nil)
+    /// AppKit's cursor cache does not include the event this tap is handling, so a drag read from it
+    /// stayed on the press point. The delta comes from `CGEvent.location` instead: Quartz y grows
+    /// down and the document view is flipped, so the delta adds straight onto the document point.
+    private static func pointInDocument(_ session: TileDrag, _ cgEvent: CGEvent) -> CGPoint {
+        CGPoint(x: session.downInDocument.x + cgEvent.location.x - session.downQuartz.x,
+            y: session.downInDocument.y + cgEvent.location.y - session.downQuartz.y)
     }
 
     private static func pointerLocationInWindow() -> NSPoint {

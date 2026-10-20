@@ -13,13 +13,16 @@ the global mouse tap must yield the drop's mouse-up (`passesThroughMouseUp`), an
 
 - **Two owners, one boundary.** AppKit's `NSDraggingDestination` owns the drag (hover highlight, the `.link`
   operation, the auto-select timer); the global mouse tap owns ordinary clicks. They conflict only on the
-  one event that ends a drag — the `leftMouseUp`. A file drag over the switcher can only have started in
-  another app BEFORE the switcher showed (the tap swallows any `leftMouseDown` outside the panel, and tiles
-  aren't drag sources), so the tap never saw that drag's `leftMouseDown`. `passesThroughMouseUp` keys off
-  exactly that: yield any up whose down the tap didn't see, so AppKit / the source app concludes the drop
-  instead of the tap swallowing it and leaving the file glued to the cursor. This holds wherever the release
-  lands — on a tile, on the padding around the tiles, or outside the panel — because none of those are a
-  down the tap saw. A normal click's down IS seen, so clicks route normally. This is the #5350-regression fix.
+  one event that ends a drag — the `leftMouseUp`. A file drag starts in another app. The tap does not treat
+  that `leftMouseDown` as its own: a down from before the switcher was shown was never observed, and a down
+  outside the panel while it is showing is delivered rather than deleted (deleting it means the other app
+  never begins the drag). `passesThroughMouseUp` yields any up whose down the tap didn't claim, so AppKit /
+  the source app concludes the drop instead of the file staying glued to the cursor. This holds wherever
+  the release lands — on a tile, on the padding around the tiles, or outside the panel. A click on a tile
+  IS claimed, so it routes normally. This is the #5350-regression fix.
+- **A press that starts outside is delivered whole.** `outsideRelease` dismisses only when that press never
+  crossed the drag threshold and the release is still outside. Anything else (a drag, or a release over the
+  panel) is yielded so the drop can conclude.
 - **No grab on appear + deadzone.** A drag already in flight when the switcher shows must not select a
   window on the first stray pixel. `dragOver` reports `.inDeadzone` (still a valid `.link` drop, but no
   selection and no timer) until the pointer clears the same movement deadzone mouse hover uses.
@@ -55,6 +58,9 @@ Mirrors `DragAndDropResolverTests.swift` 1:1.
 ### C. Mouse-up pass-through (the regression fix)
 - **testPassesThroughMouseUpForUnseenDown** — a drag's down was never seen → yield the up (don't swallow the drop).
 - **testSwallowsMouseUpForSeenDown** — a click's down was seen → route normally (not yielded).
+- **testOutsideClickDismisses** — a press that starts and ends outside, under the drag threshold → dismiss.
+- **testOutsideDragIsYielded** — once the press has crossed the drag threshold, the release is yielded on or off the panel.
+- **testOutsidePressReleasedOverThePanelIsYielded** — a short press that ends over the panel is yielded, not dismissed.
 
 ### D. Drop validity
 - **testDropNeedsTargetWindowBundleAndUrls** — target + window + bundle URL + ≥1 URL → drop.

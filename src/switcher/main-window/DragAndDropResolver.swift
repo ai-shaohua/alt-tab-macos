@@ -37,13 +37,21 @@ enum DragAndDropResolver {
     }
 
     /// The global mouse tap must NOT consume a `leftMouseUp` ending a gesture it didn't initiate. A file drag
-    /// over the switcher can only have started in another app BEFORE the switcher showed (downs outside the
-    /// panel are swallowed, and tiles aren't drag sources), so the tap never saw its `leftMouseDown`. Yield
-    /// such an up so AppKit / the source app concludes the drop — whether released on a tile, the padding
+    /// over the switcher started in another app, so the tap never treated that `leftMouseDown` as its own.
+    /// Yield such an up so AppKit / the source app concludes the drop — whether released on a tile, the padding
     /// around the tiles, or outside the panel — otherwise the file stays glued to the cursor. A normal
     /// click's down IS seen, so clicks (select tile, dismiss) route normally and are not yielded.
     static func passesThroughMouseUp(mouseDownWasSeen: Bool) -> Bool {
         !mouseDownWasSeen
+    }
+
+    /// What to do with a press that began outside the panel. The whole gesture has to be delivered: deleting
+    /// the down means the other app never starts the drag. A release that never moved far enough to be a
+    /// drag, and lands outside, is the click that dismisses the switcher.
+    enum OutsideRelease: Equatable { case dismiss, yield }
+
+    static func outsideRelease(crossedDragThreshold: Bool, releasedInside: Bool) -> OutsideRelease {
+        (!crossedDragThreshold && !releasedInside) ? .dismiss : .yield
     }
 
     /// A drop opens the dragged URLs with the targeted tile's app, so it needs a target tile, that tile's
