@@ -6,10 +6,14 @@ class Screens {
     static func refresh() {
         all.removeAll()
         NSScreen.clearUuidCache()
+        var live = Set<ScreenUuid>()
         for screen in NSScreen.screens {
-            guard let uuid = screen.cachedUuid() else { continue }
+            guard let uuid = screen.uuid() else { continue }
             all[uuid] = screen
+            live.insert(uuid)
+            _ = screen.cachedUuid()
         }
+        Window.dropStalePendingScreens(live)
     }
 }
 

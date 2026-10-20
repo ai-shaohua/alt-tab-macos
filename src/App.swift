@@ -459,6 +459,8 @@ class App: AppCenterApplication {
         if listChangedSincePress, !Windows.updatesBeforeShowing() { hideUi(); return }
         Appearance.update()
         guard SwitcherSession.isActive else { return }
+        Screens.refresh()
+        Windows.list.forEach { $0.updateScreenId() }
         TilesView.swapBackgroundViewIfNeeded()
         guard SwitcherSession.isActive else { return }
         refreshUi()

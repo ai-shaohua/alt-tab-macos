@@ -576,14 +576,18 @@ class TilesView {
         var model: ScreenColumnLayout.Screen
     }
 
-    /// Left to right, matching `ScreenColumnLayout.ordered`.
+    /// Left to right, matching `ScreenColumnLayout.ordered`. Order comes from `CGDisplayBounds`
+    /// (current desk), not from an `NSScreen` kept across a monitor change.
     private static func orderedSwitcherScreens() -> [SwitcherScreen] {
+        let primaryMaxY = CGDisplayBounds(CGMainDisplayID()).height
         let raw: [SwitcherScreen] = NSScreen.screens.compactMap { screen in
-            guard let uuid = screen.cachedUuid() else { return nil }
+            guard let id = screen.number(), let uuid = screen.uuid() else { return nil }
+            let bounds = CGDisplayBounds(id)
+            guard bounds.width > 0, bounds.height > 0 else { return nil }
             let reported = screen.localizedName
             let name = reported.isEmpty ? NSLocalizedString("Screen", comment: "Display name when the screen has none") : reported
             return SwitcherScreen(screen: screen, model: ScreenColumnLayout.Screen(id: uuid as String, name: name,
-                originX: screen.frame.minX, originY: screen.frame.minY))
+                originX: bounds.minX, originY: primaryMaxY - bounds.maxY))
         }
         return ScreenColumnLayout.ordered(raw.map { $0.model }).compactMap { model in raw.first { $0.model.id == model.id } }
     }
@@ -666,7 +670,8 @@ class TilesView {
         let doc = scrollView.documentView!
         doc.subviews = views
         if usingScreenColumns {
-            doc.addSubview(screenColumnChrome, positioned: .below, relativeTo: views.first)
+            // Tile layers draw outside their frames and would cover a header that sits underneath them.
+            doc.addSubview(screenColumnChrome)
         }
         doc.addSubview(thumbnailOverView)
         thumbnailOverView.scrollView = scrollView
@@ -677,6 +682,8 @@ class TilesView {
     }
 
     static func screen(forColumn index: Int) -> NSScreen? {
+        let live = orderedSwitcherScreens()
+        if live.indices.contains(index) { return live[index].screen }
         guard index >= 0, index < screenColumnScreens.count else { return nil }
         return screenColumnScreens[index]
     }

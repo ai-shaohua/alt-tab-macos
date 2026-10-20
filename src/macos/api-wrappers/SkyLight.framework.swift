@@ -68,6 +68,11 @@ func CGSCopyWindowsWithOptionsAndTags(_ cid: CGSConnectionID, _ owner: Int, _ sp
 @_silgen_name("CGSManagedDisplayGetCurrentSpace")
 func CGSManagedDisplayGetCurrentSpace(_ cid: CGSConnectionID, _ displayUuid: ScreenUuid) -> CGSSpaceID
 
+/// A position write stays on the display that owns the window's Space. Joining the target display's
+/// current Space is what lets the window actually leave the screen it is on.
+@_silgen_name("SLSMoveWindowsToManagedSpace") @discardableResult
+func SLSMoveWindowsToManagedSpace(_ cid: CGSConnectionID, _ windows: CFArray, _ space: CGSSpaceID) -> CGError
+
 /// returns the provided CGWindow property for the provided CGWindowID
 /// * macOS 10.10+
 @_silgen_name("CGSCopyWindowProperty") @discardableResult

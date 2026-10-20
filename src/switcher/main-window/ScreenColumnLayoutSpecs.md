@@ -17,8 +17,10 @@ on-screen frame and the Accessibility steps; `Window.moveToScreen` performs them
 
 ### Names
 
-The header is `NSScreen.localizedName`. Two displays that share a name are numbered in column order
-(`DELL 1`, `DELL 2`). A display with an empty name uses the localized fallback "Screen".
+The header is `NSScreen.localizedName`, drawn in a band above that column's thumbnails, and read from the displays attached when the switcher is shown.
+Two displays that share a name are numbered in column order (`DELL 1`, `DELL 2`). A display with an
+empty name uses the localized fallback "Screen". Column order follows `CGDisplayBounds`, the
+displays' current place on the desk.
 
 ### Coordinates
 

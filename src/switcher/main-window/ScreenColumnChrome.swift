@@ -1,26 +1,15 @@
 import Cocoa
 
-/// Column names and the drop highlight behind the tiles. Clicks pass through: the event tap decides
-/// what a press does, and this view only draws.
+/// Column names and the drop highlight, drawn above the tiles. Tile layers paint outside their frames
+/// and would cover a header underneath. Clicks pass through: the event tap decides what a press does.
 final class ScreenColumnChrome: FlippedView {
     private var columnFrames = [CGRect]()
-    private var labels = [NSTextField]()
+    private var names = [String]()
     private var highlighted: Int?
 
     func show(_ columns: [ScreenColumnLayout.PlacedColumn], xOffset: CGFloat) {
         columnFrames = columns.map { $0.frame.offsetBy(dx: xOffset, dy: 0) }
-        while labels.count < columns.count { labels.append(makeLabel()) }
-        for (index, column) in columns.enumerated() {
-            let label = labels[index]
-            label.isHidden = false
-            if label.stringValue != column.name { label.stringValue = column.name }
-            label.font = Appearance.font
-            label.textColor = Appearance.fontColor
-            var header = column.headerFrame
-            header.origin.x += xOffset
-            label.frame = header.insetBy(dx: 4, dy: 0)
-        }
-        for label in labels.dropFirst(columns.count) { label.isHidden = true }
+        names = columns.map { $0.name }
         if let highlighted, highlighted >= columnFrames.count { self.highlighted = nil }
         needsDisplay = true
     }
@@ -36,24 +25,39 @@ final class ScreenColumnChrome: FlippedView {
 
     override func draw(_ dirtyRect: NSRect) {
         for (index, frame) in columnFrames.enumerated() where dirtyRect.intersects(frame) {
-            var band = frame
-            band.size.height = min(ScreenColumnLayout.headerHeight, frame.height)
-            Appearance.fontColor.withAlphaComponent(index == highlighted ? 0.18 : 0.08).setFill()
+            let band = headerBand(frame)
+            Appearance.fontColor.withAlphaComponent(index == highlighted ? 0.22 : 0.14).setFill()
             NSBezierPath(roundedRect: band.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6).fill()
             Appearance.fontColor.withAlphaComponent(index == highlighted ? 0.45 : 0.16).setStroke()
             let outline = NSBezierPath(roundedRect: frame.insetBy(dx: 1, dy: 1), xRadius: 8, yRadius: 8)
             outline.lineWidth = index == highlighted ? 2 : 1
             outline.stroke()
+            if index < names.count { drawName(names[index], in: band) }
         }
     }
 
-    private func makeLabel() -> NSTextField {
-        let label = NSTextField(labelWithString: "")
-        label.alignment = .center
-        label.lineBreakMode = .byTruncatingMiddle
-        label.font = Appearance.font
-        label.textColor = Appearance.fontColor
-        addSubview(label)
-        return label
+    private func headerBand(_ frame: CGRect) -> CGRect {
+        var band = frame
+        band.size.height = min(ScreenColumnLayout.headerHeight, frame.height)
+        return band
+    }
+
+    private func drawName(_ name: String, in band: CGRect) {
+        guard !name.isEmpty else { return }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingMiddle
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: Appearance.font.pointSize, weight: .semibold),
+            .foregroundColor: Appearance.fontColor,
+            .paragraphStyle: paragraph,
+        ]
+        let text = name as NSString
+        let used = text.boundingRect(with: CGSize(width: max(0, band.width - 8), height: band.height),
+            options: [.usesLineFragmentOrigin], attributes: attributes)
+        var rect = band.insetBy(dx: 4, dy: 0)
+        rect.origin.y += max(0, (rect.height - ceil(used.height)) / 2)
+        rect.size.height = ceil(used.height)
+        text.draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
     }
 }

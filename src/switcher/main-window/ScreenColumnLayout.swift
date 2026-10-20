@@ -5,7 +5,7 @@ import Foundation
 /// measures tiles and assigns frames; this decides which column a tile belongs to, where it sits,
 /// and which column a drop lands on.
 enum ScreenColumnLayout {
-    static let headerHeight = CGFloat(26)
+    static let headerHeight = CGFloat(32)
     static let columnGap = CGFloat(8)
     /// A press that moves less than this stays a click (focus the window). Past it, the press is a
     /// drag onto another screen's column.

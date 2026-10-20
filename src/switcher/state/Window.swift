@@ -353,6 +353,10 @@ class Window {
     /// old screen until then.
     static var pendingScreenMoves = [CGWindowID: ScreenUuid]()
 
+    static func dropStalePendingScreens(_ live: Set<ScreenUuid>) {
+        pendingScreenMoves = pendingScreenMoves.filter { live.contains($0.value) }
+    }
+
     func layoutScreenId() -> ScreenUuid? {
         if let wid = cgWindowId, let pending = Self.pendingScreenMoves[wid] { return pending }
         return screenId
@@ -390,25 +394,48 @@ class Window {
     }
 
     private func moveAxWindow(_ element: AXUIElement, to screen: NSScreen) {
-        let primaryMaxY = NSScreen.screens.first?.frame.maxY ?? screen.frame.maxY
-        let target = WindowScreenMove.quartzFrame(cocoa: cocoaVisibleFrame(screen), primaryMaxY: primaryMaxY)
-        let source = screenId.flatMap { Screens.all[$0] }.map { WindowScreenMove.quartzFrame(cocoa: cocoaVisibleFrame($0), primaryMaxY: primaryMaxY) }
+        let live = Self.liveScreen(screen)
+        let primaryMaxY = CGDisplayBounds(CGMainDisplayID()).height
+        let target = quartzFrame(live, primaryMaxY)
+        let source = NSScreen.screens.first { occupies($0) }.map { quartzFrame($0, primaryMaxY) }
         let point = WindowScreenMove.position(windowOrigin: self.position, windowSize: self.size ?? .zero, from: source, to: target)
-        scheduleAxSteps(WindowScreenMove.steps(isFullscreen: self.isFullscreen, isMinimized: self.isMinimized, position: point), element)
+        scheduleAxSteps(WindowScreenMove.steps(isFullscreen: self.isFullscreen, isMinimized: self.isMinimized, position: point), element, live)
     }
 
-    private func scheduleAxSteps(_ steps: [WindowScreenMove.Step], _ element: AXUIElement) {
-        scheduleAxStep(0, steps, element, after: 0)
+    /// The `NSScreen` from the column can be the object captured before the monitors changed. Prefer the
+    /// live list entry with the same display id.
+    private static func liveScreen(_ screen: NSScreen) -> NSScreen {
+        guard let id = screen.number() else { return screen }
+        return NSScreen.screens.first { $0.number() == id } ?? screen
+    }
+
+    private func quartzFrame(_ screen: NSScreen, _ primaryMaxY: CGFloat) -> WindowScreenMove.Frame {
+        let visible = WindowScreenMove.quartzFrame(cocoa: cocoaVisibleFrame(screen), primaryMaxY: primaryMaxY)
+        guard let id = screen.number() else { return visible }
+        let bounds = CGDisplayBounds(id)
+        guard bounds.width > 0, bounds.height > 0 else { return visible }
+        let sameDisplay = abs(screen.frame.width - bounds.width) < 1 && abs(screen.frame.height - bounds.height) < 1
+        guard sameDisplay else { return WindowScreenMove.Frame(origin: bounds.origin, size: bounds.size) }
+        return visible
+    }
+
+    private func scheduleAxSteps(_ steps: [WindowScreenMove.Step], _ element: AXUIElement, _ screen: NSScreen) {
+        scheduleAxStep(0, steps, element, screen, after: 0)
     }
 
     /// Each step is queued only after the previous one has returned, plus `pauseAfter` — a concurrent
     /// queue would otherwise run the position write while the fullscreen exit was still in flight.
-    private func scheduleAxStep(_ index: Int, _ steps: [WindowScreenMove.Step], _ element: AXUIElement, after delay: TimeInterval) {
+    private func scheduleAxStep(_ index: Int, _ steps: [WindowScreenMove.Step], _ element: AXUIElement, _ screen: NSScreen, after delay: TimeInterval) {
         guard index < steps.count else { return }
         let run = { [weak self] in
             guard let self else { return }
-            Self.applyAxStep(steps[index], element)
-            self.scheduleAxStep(index + 1, steps, element, after: WindowScreenMove.pauseAfter(steps[index]))
+            if case .setPosition = steps[index] { self.joinDisplaySpace(screen) }
+            guard Self.applyAxStep(steps[index], element) else {
+                if let wid = self.cgWindowId { Self.pendingScreenMoves[wid] = nil }
+                DispatchQueue.main.async { self.refreshOpenSwitcher() }
+                return
+            }
+            self.scheduleAxStep(index + 1, steps, element, screen, after: WindowScreenMove.pauseAfter(steps[index]))
         }
         if delay == 0 {
             BackgroundWork.accessibilityCommandsQueue.addOperation(run)
@@ -417,22 +444,36 @@ class Window {
         }
     }
 
-    private static func applyAxStep(_ step: WindowScreenMove.Step, _ element: AXUIElement) {
+    private func joinDisplaySpace(_ screen: NSScreen) {
+        guard let wid = cgWindowId, let uuid = screen.uuid() else { return }
+        let space = CGSManagedDisplayGetCurrentSpace(CGS_CONNECTION, uuid)
+        guard space != 0 else { return }
+        let windows = [NSNumber(value: wid)] as CFArray
+        SLSMoveWindowsToManagedSpace(CGS_CONNECTION, windows, space)
+    }
+
+    private static func applyAxStep(_ step: WindowScreenMove.Step, _ element: AXUIElement) -> Bool {
         switch step {
             case .deminiaturize: try? element.setAttribute(kAXMinimizedAttribute, false)
             case .exitFullscreen: try? element.setAttribute(kAXFullscreenAttribute, false)
             case .enterFullscreen: try? element.setAttribute(kAXFullscreenAttribute, true)
             case .setPosition(let point):
                 var point = point
-                guard let value = AXValueCreate(.cgPoint, &point) else { return }
-                try? element.setAttribute(kAXPositionAttribute, value)
+                guard let value = AXValueCreate(.cgPoint, &point) else { return false }
+                let error = AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value)
+                guard error == .success else {
+                    Logger.error { "move window to \(point) failed (\(error.rawValue))" }
+                    return false
+                }
         }
+        return true
     }
 
     private func moveAltTabWindow(_ window: NSWindow, to screen: NSScreen) {
-        let primaryMaxY = NSScreen.screens.first?.frame.maxY ?? screen.frame.maxY
-        let target = WindowScreenMove.quartzFrame(cocoa: cocoaVisibleFrame(screen), primaryMaxY: primaryMaxY)
-        let source = window.screen.map { WindowScreenMove.quartzFrame(cocoa: cocoaVisibleFrame($0), primaryMaxY: primaryMaxY) }
+        let live = Self.liveScreen(screen)
+        let primaryMaxY = CGDisplayBounds(CGMainDisplayID()).height
+        let target = quartzFrame(live, primaryMaxY)
+        let source = window.screen.map { quartzFrame($0, primaryMaxY) }
         let quartzTopLeft = WindowScreenMove.quartzFrame(cocoa: window.frame, primaryMaxY: primaryMaxY).origin
         let point = WindowScreenMove.position(windowOrigin: quartzTopLeft, windowSize: window.frame.size, from: source, to: target)
         let cocoa = WindowScreenMove.cocoaOrigin(quartzTopLeft: point, windowHeight: window.frame.size.height, primaryMaxY: primaryMaxY)
@@ -761,27 +802,37 @@ class Window {
     /// Internal (not private): also invoked by `TrackedWindowStateBridge` for the reducer's `updateScreenId` effect
     /// — an `NSScreen`-coupled derivation the pure layer can't do.
     func updateScreenId() {
-        screenId = NSScreen.screens.first { isOnScreen($0) }?.cachedUuid()
+        let screens = NSScreen.screens
+        screenId = (screens.first { isOnScreen($0) } ?? screens.first { occupies($0) })?.cachedUuid()
         guard let wid = cgWindowId, let pending = Self.pendingScreenMoves[wid], pending == screenId else { return }
         Self.pendingScreenMoves[wid] = nil
     }
 
     /// window may not be visible on that screen (e.g. the window is not on the current Space)
     func isOnScreen(_ screen: NSScreen) -> Bool {
-        if NSScreen.screensHaveSeparateSpaces {
-            if let screenUuid = screen.cachedUuid(), let screenSpaces = Spaces.screenSpacesMap[screenUuid] {
-                return screenSpaces.contains { screenSpace in self.spaceIds.contains { $0 == screenSpace } }
-            }
-        } else {
-            let referenceWindow = referenceWindowForTabbedWindow()
-            if let topLeftCorner = referenceWindow?.position, let size = referenceWindow?.size {
-                var screenFrameInQuartzCoordinates = screen.frame
-                screenFrameInQuartzCoordinates.origin.y = NSMaxY(NSScreen.screens[0].frame) - NSMaxY(screen.frame)
-                let windowRect = CGRect(origin: topLeftCorner, size: size)
-                return windowRect.intersects(screenFrameInQuartzCoordinates)
-            }
+        if NSScreen.screensHaveSeparateSpaces,
+           let screenUuid = screen.cachedUuid(),
+           let screenSpaces = Spaces.screenSpacesMap[screenUuid] {
+            return screenSpaces.contains { self.spaceIds.contains($0) }
         }
-        return true
+        return occupies(screen) || !hasUsableFrame
+    }
+
+    /// `CGDisplayBounds` is the display's current rect in the same top-left global space as `position`.
+    /// `NSScreen.frame` can still describe the previous arrangement after the monitors change.
+    private func occupies(_ screen: NSScreen) -> Bool {
+        guard hasUsableFrame, let id = screen.number() else { return false }
+        let bounds = CGDisplayBounds(id)
+        guard bounds.width > 0, bounds.height > 0 else { return false }
+        let reference = referenceWindowForTabbedWindow()
+        guard let origin = reference?.position, let size = reference?.size else { return false }
+        return CGRect(origin: origin, size: size).intersects(bounds)
+    }
+
+    private var hasUsableFrame: Bool {
+        let reference = referenceWindowForTabbedWindow()
+        guard let size = reference?.size, reference?.position != nil else { return false }
+        return size.width > 0 && size.height > 0
     }
 
     /// Whether the window's frame contains `point`, in Quartz coordinates (origin at the top-left of the main

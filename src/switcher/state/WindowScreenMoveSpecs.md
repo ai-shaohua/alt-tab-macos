@@ -19,6 +19,10 @@ fullscreen enter during that animation.
   top-left with y growing down. `cocoaOrigin` is the inverse, for AltTab's own `NSWindow`s.
 - **No source frame pins the window to the target's top-left.** A window larger than the target on
   one axis pins to the target's origin on that axis.
+- **The shell joins the target display's current Space before writing the position.** A position
+  write stays on the display that owns the window's Space, so the move puts the window on that
+  Space first. The target rect is the display's current bounds when the `NSScreen` still describes
+  a previous arrangement.
 - **Minimized and fullscreen compose.** A minimized fullscreen window is restored, leaves
   fullscreen, moves, then enters fullscreen.
 
