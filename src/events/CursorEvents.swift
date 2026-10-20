@@ -5,7 +5,9 @@ class CursorEvents {
     private static var eventTap: CFMachPort!
     private static var shouldBeEnabled: Bool!
     private static var mouseDownTarget: AnyObject?
-    private static var mouseDownInsideSearchField = false
+    /// A press that started on the search field or the app picker. Those controls have to receive the
+    /// click: this tap deletes every other press inside the panel.
+    private static var mouseDownInsideChrome = false
     private static var searchHintClick = SearchDiscoveryPolicy.Click()
     /// true once the tap has observed a leftMouseDown since the switcher showed (reset per gesture and on
     /// each show). A drag from another app started before the switcher showed, so its down was never seen —
@@ -77,19 +79,20 @@ class CursorEvents {
     private static func handleLeftMouseDown(_ cgEvent: CGEvent) -> Unmanaged<CGEvent>? {
         if searchHintClick.begin(inside: SearchDiscoveryHint.shared.containsMouseLocation) {
             mouseDownTarget = nil
-            mouseDownInsideSearchField = false
+            mouseDownInsideChrome = false
             return Unmanaged.passUnretained(cgEvent)
         }
         if TilesView.hasMarkedText() || ContextMenuEvents.isMenuOpen {
             sawLeftMouseDown = true
             return Unmanaged.passUnretained(cgEvent)
         }
-        if isPointerInsideSearchField() {
+        if TilesView.isAppFilterOpen && !isPointerInsideChrome() { TilesView.closeAppFilter() }
+        if isPointerInsideChrome() {
             sawLeftMouseDown = true
-            mouseDownInsideSearchField = true
+            mouseDownInsideChrome = true
             return Unmanaged.passUnretained(cgEvent)
         }
-        mouseDownInsideSearchField = false
+        mouseDownInsideChrome = false
         guard isPointerInsideUi() else { return beginOutsidePress(cgEvent) }
         sawLeftMouseDown = true
         outsidePress = nil
@@ -147,8 +150,8 @@ class CursorEvents {
             return Unmanaged.passUnretained(cgEvent)
         }
         if TilesView.hasMarkedText() || ContextMenuEvents.isMenuOpen { return Unmanaged.passUnretained(cgEvent) }
-        if mouseDownInsideSearchField || isPointerInsideSearchField() {
-            mouseDownInsideSearchField = false
+        if mouseDownInsideChrome || isPointerInsideChrome() {
+            mouseDownInsideChrome = false
             return Unmanaged.passUnretained(cgEvent)
         }
         if tileDrag != nil {
@@ -293,11 +296,14 @@ class CursorEvents {
         TilesPanel.shared.contentLayoutRect.contains(pointerLocationInWindow())
     }
 
-    private static func isPointerInsideSearchField() -> Bool {
-        let searchField = TilesView.searchField
-        if searchField.isHidden { return false }
-        let point = searchField.convert(pointerLocationInWindow(), from: nil)
-        return searchField.bounds.contains(point)
+    private static func isPointerInsideChrome() -> Bool {
+        viewContainsPointer(TilesView.searchField) || viewContainsPointer(TilesView.appFilterButton) || viewContainsPointer(TilesView.appFilterDropdown)
+    }
+
+    private static func viewContainsPointer(_ view: NSView) -> Bool {
+        guard view.superview != nil, !view.isHidden, view.window != nil else { return false }
+        let point = view.convert(pointerLocationInWindow(), from: nil)
+        return view.bounds.contains(point)
     }
 
     private static func pointerInOverlay() -> (TileOverView, NSPoint) {

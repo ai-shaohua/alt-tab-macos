@@ -140,6 +140,9 @@
 "Animations…" = "Animations…";
 
 /* No comment provided by engineer. */
+"App" = "App";
+
+/* No comment provided by engineer. */
 "App Icons" = "App Icons";
 
 /* No comment provided by engineer. */
@@ -360,6 +363,9 @@
 
 /* No comment provided by engineer. */
 "Filtering" = "Filtering";
+
+/* Placeholder in the switcher's app picker */
+"Filter by app" = "Filter by app";
 
 /* No comment provided by engineer. */
 "Focus" = "Focus";

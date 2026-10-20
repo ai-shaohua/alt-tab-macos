@@ -49,7 +49,29 @@ class Windows {
     private static var shouldRestoreDefaultSelectionOnSearchClear = false
 
     static func shouldDisplay(_ window: Window) -> Bool {
-        window.shouldShowTheUser && Search.matches(window, query: (SwitcherSession.current?.searchQuery ?? ""))
+        window.shouldShowTheUser
+            && AppFilter.matches(windowPid: window.application.pid, selectedPid: SwitcherSession.current?.appFilterPid)
+            && Search.matches(window, query: (SwitcherSession.current?.searchQuery ?? ""))
+    }
+
+    static func updateAppFilter(_ pid: pid_t?) {
+        guard let session = SwitcherSession.current, session.appFilterPid != pid else { return }
+        session.appFilterPid = pid
+        shouldSelectBestMatchOnSearchChange = true
+        session.hoveredIndex = nil
+        session.hoveredTarget = nil
+    }
+
+    /// Drop a picker selection whose app no longer has a window the user can see.
+    private static func syncAppFilterToShownApps() {
+        guard let session = SwitcherSession.current, session.appFilterPid != nil else { return }
+        let choices = AppFilter.choices(list.filter { $0.shouldShowTheUser }.map { (pid: $0.application.pid, name: $0.application.localizedName ?? "") })
+        let resolved = AppFilter.resolvedSelection(session.appFilterPid, choices: choices)
+        guard resolved != session.appFilterPid else { return }
+        session.appFilterPid = resolved
+        shouldSelectBestMatchOnSearchChange = true
+        session.hoveredIndex = nil
+        session.hoveredTarget = nil
     }
 
     static func updateSearchQuery(_ query: String) {
@@ -271,6 +293,7 @@ class Windows {
     /// `updatesBeforeShowing()`'s filtering to have run — and both happen in the same main-thread turn as the
     /// press, so no event can land in between and shift the count.
     private static func selectionInputs(_ session: SwitcherSession) -> SelectionInputs {
+        syncAppFilterToShownApps()
         let snapshot = selectionSnapshot()
         let visibleCountAtSummon = session.visibleWindowCountAtSummon ?? snapshot.filter { $0.visible }.count
         session.visibleWindowCountAtSummon = visibleCountAtSummon

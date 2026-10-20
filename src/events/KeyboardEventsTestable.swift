@@ -1,4 +1,5 @@
 import ShortcutRecorder
+import Carbon.HIToolbox.Events
 
 class KeyboardEventsTestable {
     static var globalShortcutsIds: [String: Int] {
@@ -13,6 +14,16 @@ class KeyboardEventsTestable {
 func handleKeyboardEvent(_ globalId: Int?, _ shortcutState: ShortcutState?, _ keyCode: UInt32?,
                          _ modifiers: NSEvent.ModifierFlags?, _ isARepeat: Bool, _ event: NSEvent? = nil,
                          _ recordedHoldRelease: Bool = false) -> Bool {
+    if TilesView.isAppFilterOpen {
+        if let event, event.type == .keyDown {
+            if TilesView.handleAppFilterKeyDown(event) { return true }
+            return false
+        }
+        if keyCode == UInt32(kVK_Escape) {
+            TilesView.closeAppFilter()
+            return true
+        }
+    }
     if let event, shouldAbsorbSearchEditingKeyDown(event) {
         switch TilesView.handleSearchEditingKeyDown(event) {
         case .handled: return true

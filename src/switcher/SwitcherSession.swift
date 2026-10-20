@@ -78,6 +78,8 @@ final class SwitcherSession {
     /// Keeps one-per-app tiles from changing identity while discovery, grouping and search settle.
     var representativeByPid = [pid_t: String]()
     var searchQuery: String = ""
+    /// Pid of the app the picker is narrowed to. Nil shows every app. Reset with the session.
+    var appFilterPid: pid_t?
     /// Where the pointer was at the press, in Quartz coordinates. The cursor scopes filter against it for the
     /// whole session: read again at a repaint, it would follow the pointer onto the switcher's own tiles.
     let cursorAtSummon = CGEvent(source: nil)?.location

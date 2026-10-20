@@ -45,6 +45,7 @@
 "and press" = "然后按";
 "Animations" = "动画";
 "Animations…" = "动画…";
+"App" = "应用";
 "App Icons" = "应用图标";
 "App Icons & Titles styles" = "应用图标和标题样式";
 "App Icons & Window Titles styles" = "应用图标和窗口标题样式";
@@ -119,6 +120,7 @@
 "Failed to import settings" = "导入设置失败";
 "Feature" = "功能";
 "Filtering" = "筛选";
+"Filter by app" = "按应用筛选";
 "Focus" = "聚焦";
 "Focus selected window" = "聚焦所选窗口";
 "Free" = "免费";

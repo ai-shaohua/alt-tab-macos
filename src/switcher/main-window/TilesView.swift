@@ -14,7 +14,9 @@ class TilesView {
     static var contentView: EffectView!
     static var currentEffectViewKind: EffectViewKind?
     private static var cachedEffectViews: [EffectViewKind: EffectView] = [:]
-    static var searchField = NSSearchField(frame: NSRect(x: 0, y: 0, width: 320, height: 30))
+    static var searchField = SwitcherSearchField(frame: NSRect(x: 0, y: 0, width: 320, height: 30))
+    static let appFilterButton = AppFilterButton()
+    static let appFilterDropdown = AppFilterDropdown()
     static var noWindowLabel = NSTextField(labelWithString: NSLocalizedString("No Window", comment: ""))
     private(set) static var searchMode: SearchMode = .off
     static var rows = [[TileView]]()
@@ -35,6 +37,7 @@ class TilesView {
     static func initialize() {
         guard !initialized else { return }
         configureSearchField()
+        configureAppFilterControl()
         configureNoWindowLabel()
         updateBackgroundView()
         initialized = true
@@ -51,6 +54,7 @@ class TilesView {
     static var isSearchEditing: Bool { searchMode == .editing }
 
     static func startSearchSession(_ startInSearchMode: Bool) {
+        closeAppFilter()
         searchField.stringValue = ""
         Windows.updateSearchQuery("")
         searchMode = SearchModeResolver.startMode(startInSearch: startInSearchMode)
@@ -59,6 +63,7 @@ class TilesView {
 
     static func endSearchSession() {
         MainThreadStall.step()
+        closeAppFilter()
         Windows.updateSearchQuery("")
         TilesPanel.shared.resetFrozenPosition()
         searchMode = .off
@@ -127,7 +132,7 @@ class TilesView {
     /// screen. Measured under 1ms on macOS 26.6.2; the deferral is for the tail, not the median.
     private static func giveTheFieldTheCaret() {
         DispatchQueue.main.async {
-            guard searchMode == .editing, SwitcherSession.isActive else { return }
+            guard searchMode == .editing, SwitcherSession.isActive, !isAppFilterOpen else { return }
             giveTheFieldTheCaretNow()
         }
     }
@@ -139,6 +144,7 @@ class TilesView {
     /// past that point the selection belongs to the user, and moving it is what broke ⌘A (#6019). See
     /// `SearchFieldEditing`.
     static func giveTheFieldTheCaretNow() {
+        guard !isAppFilterOpen else { return }
         let intent = SearchFieldEditing.caretIntent(mode: searchMode, fieldOwnsCaret: fieldOwnsTheCaret())
         guard intent == .takeCaretAndCollapseToEnd else { return }
         TilesPanel.shared.makeFirstResponder(searchField)
@@ -289,6 +295,7 @@ class TilesView {
         let editable = SearchModeResolver.isFieldEditable(searchMode)
         searchField.isEditable = editable
         searchField.isSelectable = editable
+        searchField.refusesFirstResponder = !editable
         if SwitcherSession.isActive {
             MainMenu.toggleEditMenu(editable)
         }
@@ -327,13 +334,7 @@ class TilesView {
         let host = contentView.hostView
         scrollView?.removeFromSuperview()
         scrollView = ScrollView()
-        if searchMode != .off {
-            host.addSubview(searchField)
-        } else {
-            searchField.removeFromSuperview()
-        }
-        host.addSubview(scrollView)
-        host.addSubview(noWindowLabel)
+        installSwitcherChrome(on: host)
     }
 
     static func swapBackgroundViewIfNeeded() {
@@ -342,12 +343,7 @@ class TilesView {
         guard desired != currentEffectViewKind else { return }
         let newView = cachedEffectView(for: desired)
         currentEffectViewKind = desired
-        let host = newView.hostView
-        if searchField.superview === contentView.hostView {
-            host.addSubview(searchField)
-        }
-        host.addSubview(scrollView)
-        host.addSubview(noWindowLabel)
+        installSwitcherChrome(on: newView.hostView)
         contentView = newView
         TilesPanel.shared.contentView = newView
     }
@@ -499,7 +495,7 @@ class TilesView {
     }
 
     private static func resolveAutoSize(_ widthMax: CGFloat) {
-        let searchReservedHeight: CGFloat = searchMode == .off ? 0 : searchBarHeight() + 10
+        let searchReservedHeight = searchBarHeight() + 10
         let heightMax = max(0, TilesPanel.maxThumbnailsHeight() - searchReservedHeight)
         _ = TileGridLayout.firstSizeThatFits([AppearanceSizePreference.large, .medium, .small], heightMax: heightMax) { size in
             Appearance.applySize(size)
@@ -693,13 +689,12 @@ class TilesView {
     }
 
     private static func layoutParentViews(_ maxX: CGFloat, _ widthMax: CGFloat, _ maxY: CGFloat, _ labelHeight: CGFloat) {
-        let searchBarHeight = searchBarHeight()
+        let barHeight = searchBarHeight()
         let searchBottomPadding = CGFloat(10)
-        let searchReservedHeight = searchMode == .off ? 0 : searchBarHeight + searchBottomPadding
+        let searchReservedHeight = barHeight + searchBottomPadding
         let heightMax = max(0, TilesPanel.maxThumbnailsHeight() - searchReservedHeight)
-        let minSearchWidth = min(widthMax, 320)
-        let minWidth = min(widthMax, 320)
-        TilesView.thumbnailsWidth = max(min(maxX, widthMax), searchMode == .off ? (maxX == 0 ? minWidth : 0) : minWidth)
+        let chromeFloor = min(widthMax, 360)
+        TilesView.thumbnailsWidth = max(min(maxX, widthMax), chromeFloor)
         TilesView.thumbnailsHeight = min(maxY, heightMax)
         let appIconsBottomViewportPadding = appIconsBottomViewportPadding(maxY, heightMax, labelHeight)
         let frameWidth = TilesView.thumbnailsWidth + Appearance.windowPadding * 2
@@ -720,18 +715,7 @@ class TilesView {
         scrollView.frame.size = NSSize(width: TilesView.thumbnailsWidth, height: scrollHeight)
         scrollView.frame.origin = CGPoint(x: originX, y: originY + appIconsBottomViewportPadding * 2)
         scrollView.contentView.frame.size = scrollView.frame.size
-        if searchMode != .off {
-            if searchField.superview !== host {
-                host.addSubview(searchField)
-            }
-            let searchWidth = minSearchWidth
-            searchField.frame.size = NSSize(width: searchWidth, height: searchBarHeight)
-            let searchX = originX + (TilesView.thumbnailsWidth - searchWidth) * 0.5
-            searchField.frame.origin = CGPoint(x: searchX, y: frameHeight - Appearance.windowPadding - searchBarHeight)
-            searchField.layoutSubtreeIfNeeded()
-        } else if searchField.superview != nil {
-            searchField.removeFromSuperview()
-        }
+        layoutSwitcherChrome(originX, frameHeight, barHeight)
         var columnXOffset = CGFloat(0)
         if App.shared.userInterfaceLayoutDirection == .rightToLeft {
             let croppedWidth = max(0, TilesView.thumbnailsWidth - maxX)
@@ -757,10 +741,39 @@ class TilesView {
 
     private static func searchBarHeight() -> CGFloat {
         if let cached = cachedSearchBarHeight { return cached }
-        let fitting = searchField.fittingSize.height
-        let height = fitting > 0 ? ceil(fitting) : ceil(searchField.cell?.cellSize.height ?? 30)
+        let fitting = max(searchField.fittingSize.height, appFilterButton.fittingSize.height)
+        let height = fitting > 0 ? ceil(fitting) : 30
         cachedSearchBarHeight = height
         return height
+    }
+
+    private static func installSwitcherChrome(on host: NSView) {
+        host.addSubview(searchField)
+        host.addSubview(appFilterButton)
+        host.addSubview(scrollView)
+        host.addSubview(noWindowLabel)
+        if isAppFilterOpen { host.addSubview(appFilterDropdown) }
+    }
+
+    /// Search field on the left, app picker on the right, both shown for the whole session.
+    private static func layoutSwitcherChrome(_ originX: CGFloat, _ frameHeight: CGFloat, _ barHeight: CGFloat) {
+        let widths = switcherChromeWidths(TilesView.thumbnailsWidth)
+        let y = frameHeight - Appearance.windowPadding - barHeight
+        searchField.frame = CGRect(x: originX, y: y, width: widths.search, height: barHeight)
+        appFilterButton.frame = CGRect(x: originX + widths.search + widths.gap, y: y, width: widths.app, height: barHeight)
+        let host = contentView.hostView
+        if searchField.superview !== host { host.addSubview(searchField) }
+        if appFilterButton.superview !== host { host.addSubview(appFilterButton) }
+        searchField.layoutSubtreeIfNeeded()
+        updateAppFilterButton()
+        if isAppFilterOpen { placeAppFilterDropdown() }
+    }
+
+    private static func switcherChromeWidths(_ available: CGFloat) -> (search: CGFloat, app: CGFloat, gap: CGFloat) {
+        let gap = CGFloat(8)
+        guard available > gap + 96 else { return (available, 0, 0) }
+        let app = min(160, available - gap - 96)
+        return (available - gap - app, app, gap)
     }
 
     private static func appIconsBottomViewportPadding(_ maxY: CGFloat, _ heightMax: CGFloat, _ labelHeight: CGFloat) -> CGFloat {

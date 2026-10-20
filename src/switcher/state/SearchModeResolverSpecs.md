@@ -12,7 +12,7 @@ the Edit menu, call `App.cycleSelection`).
 
 ### The two modes
 
-- **`.off`** — no search field interaction; the switcher behaves normally.
+- **`.off`** — the search field stays on screen but is not editing, so cycling shortcuts behave normally. A click in the field enters editing.
 - **`.editing`** — the search field is the first responder and editable; typing filters the list.
 
 ### How you enter search (this decides Escape's behavior)

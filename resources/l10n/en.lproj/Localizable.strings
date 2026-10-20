@@ -45,6 +45,7 @@
 "and press" = "and press";
 "Animations" = "Animations";
 "Animations…" = "Animations…";
+"App" = "App";
 "App Icons" = "App Icons";
 "App Icons & Titles styles" = "App Icons & Titles styles";
 "App Icons & Window Titles styles" = "App Icons & Window Titles styles";
@@ -119,6 +120,7 @@
 "Failed to import settings" = "Failed to import settings";
 "Feature" = "Feature";
 "Filtering" = "Filtering";
+"Filter by app" = "Filter by app";
 "Focus" = "Focus";
 "Focus selected window" = "Focus selected window";
 "Free" = "Free";

@@ -163,10 +163,15 @@ class TilesView {
         get { App.app.tilesPanel.tilesView.isSearchEditing }
         set { App.app.tilesPanel.tilesView.isSearchEditing = newValue }
     }
+    static var isAppFilterOpen = false
 
     static func handleSearchEditingKeyDown(_ event: NSEvent) -> SearchKeyResult {
         return App.app.tilesPanel.tilesView.handleSearchEditingKeyDown(event)
     }
+
+    static func handleAppFilterKeyDown(_ event: NSEvent) -> Bool { false }
+
+    static func closeAppFilter() { isAppFilterOpen = false }
 
     static func giveTheFieldTheCaretNow() {}
 }
