@@ -25,8 +25,9 @@ enum AppFilter {
         return windowPid == selectedPid
     }
 
-    /// One row per pid, sorted by name. A repeated name gets a " (2)" suffix so a popup can tell the
-    /// rows apart by title.
+    /// One row per pid. Cursor, iTerm2, Google Chrome, ChatGPT, and Sublime Text stay in that order
+    /// ahead of the rest, which sort by name. A repeated name gets a " (2)" suffix so a popup can
+    /// tell the rows apart by title.
     static func choices(_ apps: [(pid: pid_t, name: String)], unnamed: String = "App") -> [AppFilterChoice] {
         var seen = Set<pid_t>()
         var unique = [AppFilterChoice]()
@@ -35,7 +36,7 @@ enum AppFilter {
             let trimmed = app.name.trimmingCharacters(in: .whitespacesAndNewlines)
             unique.append(AppFilterChoice(pid: app.pid, title: trimmed.isEmpty ? unnamed : trimmed))
         }
-        unique.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        unique.sort(by: isOrderedBefore)
         var used = Set<String>()
         return unique.map { AppFilterChoice(pid: $0.pid, title: uniqueTitle($0.title, used: &used)) }
     }
@@ -57,6 +58,19 @@ enum AppFilter {
 
     static func matchesName(_ name: String, _ query: String) -> Bool {
         name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], locale: .current) != nil
+    }
+
+    private static let preferredTitles = ["Cursor", "iTerm2", "Google Chrome", "ChatGPT", "Sublime Text"]
+
+    private static func isOrderedBefore(_ a: AppFilterChoice, _ b: AppFilterChoice) -> Bool {
+        let rankA = preferredRank(a.title)
+        let rankB = preferredRank(b.title)
+        if rankA != rankB { return rankA < rankB }
+        return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+    }
+
+    private static func preferredRank(_ title: String) -> Int {
+        preferredTitles.firstIndex { $0.localizedCaseInsensitiveCompare(title) == .orderedSame } ?? preferredTitles.count
     }
 
     private static func uniqueTitle(_ name: String, used: inout Set<String>) -> String {

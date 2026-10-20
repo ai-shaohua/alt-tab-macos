@@ -31,6 +31,24 @@ final class AppFilterTests: XCTestCase {
         XCTAssertEqual(choices.map { $0.title }, ["App", "chrome", "Safari", "Safari (2)", "Zoom"])
     }
 
+    func testPreferredAppsSortAheadOfTheAlphabeticalRest() {
+        let choices = AppFilter.choices([
+            (pid: 1, name: "Zoom"),
+            (pid: 2, name: "Sublime Text"),
+            (pid: 3, name: "Safari"),
+            (pid: 4, name: "ChatGPT"),
+            (pid: 5, name: "Google Chrome"),
+            (pid: 6, name: "iTerm2"),
+            (pid: 7, name: "cursor"),
+            (pid: 8, name: "Finder"),
+            (pid: 9, name: "Google Chrome Canary"),
+        ])
+        XCTAssertEqual(choices.map { $0.title }, [
+            "cursor", "iTerm2", "Google Chrome", "ChatGPT", "Sublime Text",
+            "Finder", "Google Chrome Canary", "Safari", "Zoom",
+        ])
+    }
+
     func testResolvedSelectionDropsAnAppThatLeft() {
         let choices = [AppFilterChoice(pid: 1, title: "Safari")]
         XCTAssertEqual(AppFilter.resolvedSelection(1, choices: choices), 1)
