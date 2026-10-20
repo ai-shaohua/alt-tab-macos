@@ -133,6 +133,35 @@ enum ScreenColumnLayout {
         return Result(origins: origins, widths: widths, columns: columns, rows: rows(placed), maxX: x, maxY: maxY)
     }
 
+    /// Where each tile goes, resolved out of the position-keyed `compute` result and back to the window
+    /// index it belongs to. `ColumnInput.tileIndexes` carries POSITIONS into the laid-out tile array (that is
+    /// what `groups` buckets), so `Result.origins`/`widths`/`rows` are position-keyed too. The caller holds
+    /// tiles in the same order, as `(windowIndex, view)`; `windowIndexByPosition` is that array's indices
+    /// mapped to their window index. Joining on position — not on window index — is the whole point: a filter
+    /// makes the two spaces differ, and reading a position-keyed origin with a window index silently places
+    /// nothing (the off-screen-tiles bug behind the app-filter picker).
+    struct Placement: Equatable {
+        var windowIndex: Int
+        var origin: CGPoint
+        var width: CGFloat?
+    }
+
+    static func placements(_ result: Result, windowIndexByPosition: [Int]) -> [Placement] {
+        windowIndexByPosition.enumerated().compactMap { position, windowIndex in
+            guard let origin = result.origins[position] else { return nil }
+            return Placement(windowIndex: windowIndex, origin: origin, width: result.widths[position])
+        }
+    }
+
+    /// The keyboard rows (`Result.rows`, position-keyed) mapped to window indices, in the same order.
+    static func rowsByWindowIndex(_ result: Result, windowIndexByPosition: [Int]) -> [[Int]] {
+        result.rows.map { row in
+            row.compactMap { position in
+                windowIndexByPosition.indices.contains(position) ? windowIndexByPosition[position] : nil
+            }
+        }
+    }
+
     static func crossedDragThreshold(from down: CGPoint, to current: CGPoint) -> Bool {
         hypot(current.x - down.x, current.y - down.y) >= dragThreshold
     }

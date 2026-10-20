@@ -93,6 +93,33 @@ final class ScreenColumnLayoutTests: XCTestCase {
         XCTAssertEqual(result.rows, [[0]])
     }
 
+    // MARK: - F. Joining results back to window indices
+
+    func testPlacementsJoinByPositionNotWindowIndex() {
+        // Two displays, tiles whose window indices (13,14,15 and 20) are nothing like their positions
+        // (0,1,2 and 3) — the shape a filter produces. Placements must come back keyed to the window
+        // indices, each at the origin computed for its position.
+        let result = layout([
+            ScreenColumnLayout.ColumnInput(name: "Left", tileIndexes: [0, 1, 2], tileWidths: [40, 40, 40]),
+            ScreenColumnLayout.ColumnInput(name: "Right", tileIndexes: [3], tileWidths: [40]),
+        ])
+        let placements = ScreenColumnLayout.placements(result, windowIndexByPosition: [13, 14, 15, 20])
+        XCTAssertEqual(placements.map { $0.windowIndex }, [13, 14, 15, 20])
+        XCTAssertEqual(placements.map { $0.origin }, [0, 1, 2, 3].map { result.origins[$0] })
+        XCTAssertEqual(placements.map { $0.width }, [40, 40, 40, 40])
+    }
+
+    func testRowsMapPositionsToWindowIndices() {
+        // A narrow column wraps its second tile onto a new band; the other screen's tile shares the first.
+        let result = layout([
+            ScreenColumnLayout.ColumnInput(name: "Left", tileIndexes: [0, 1], tileWidths: [80, 80]),
+            ScreenColumnLayout.ColumnInput(name: "Right", tileIndexes: [2], tileWidths: [80]),
+        ])
+        // Position rows → window-index rows, order preserved.
+        XCTAssertEqual(result.rows, [[0, 2], [1]])
+        XCTAssertEqual(ScreenColumnLayout.rowsByWindowIndex(result, windowIndexByPosition: [13, 14, 20]), [[13, 20], [14]])
+    }
+
     // MARK: - E. Drag
 
     func testFivePointsIsADragAndLessIsAClick() {

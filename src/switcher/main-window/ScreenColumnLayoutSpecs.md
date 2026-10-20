@@ -42,6 +42,12 @@ the height of the tallest column, so the empty area under a short column is stil
   outside the columns' bounding box is not a drop.
 - **Rows for the arrow keys are horizontal bands of equal y**, so up and down stay on the tile
   closest in x on the next band.
+- **Results join back to tiles by position, not by window index.** `compute` keys its origins, widths
+  and rows by the positions it was handed (`ColumnInput.tileIndexes`), which are positions into the
+  laid-out tile array. The caller resolves them back through the tiles' window indices in the same
+  order. These two index spaces are equal only when nothing is filtered; an app or search filter makes
+  them diverge, and joining on window index then places nothing — tiles keep stale origins and render
+  off-screen.
 
 ---
 
@@ -68,3 +74,7 @@ Mirrors `ScreenColumnLayoutTests.swift` 1:1.
 ### E. Drag
 - **testFivePointsIsADragAndLessIsAClick** — a 3-4-5 move crosses the threshold; a 2-2 move does not.
 - **testDropHitsTheColumnTheGapAndNothingOutside** — inside a column, in the gap (nearest), and outside the bounding box.
+
+### F. Joining results back to window indices
+- **testPlacementsJoinByPositionNotWindowIndex** — positions (0,1,2,3) resolve to their window indices (13,14,15,20), each at the origin computed for its position; joining on window index would miss.
+- **testRowsMapPositionsToWindowIndices** — position-keyed keyboard rows become window-index rows in the same order.

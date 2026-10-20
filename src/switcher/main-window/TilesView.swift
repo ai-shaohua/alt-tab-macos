@@ -606,11 +606,14 @@ class TilesView {
         let screens = orderedSwitcherScreens()
         guard ScreenColumnLayout.usesColumns(screenCount: screens.count, showsAllScreens: showsAllScreens()) else { return nil }
         let names = ScreenColumnLayout.displayNames(screens.map { $0.model.name })
+        // `groups` buckets POSITIONS into `tiles` (0..<tiles.count), and `ScreenColumnLayout.compute`
+        // keys its origins/widths/rows by those same positions. Everything downstream — here and in
+        // `applyScreenColumns` — must stay in position space, never window-index space.
         let groups = ScreenColumnLayout.groups(tileScreenIds: tiles.map { tileScreenId($0.index) }, screens: screens.map { $0.model })
-        let widthByIndex = Dictionary(uniqueKeysWithValues: tiles.map { ($0.index, $0.view.frame.width) })
         let columnWidth = ScreenColumnLayout.columnWidthMax(panelWidthMax: widthMax, columnCount: screens.count, columnGap: ScreenColumnLayout.columnGap)
-        let columns = groups.enumerated().map { index, tileIndexes in
-            ScreenColumnLayout.ColumnInput(name: names[index], tileIndexes: tileIndexes, tileWidths: tileIndexes.map { widthByIndex[$0] ?? 0 })
+        let columns = groups.enumerated().map { index, positions in
+            ScreenColumnLayout.ColumnInput(name: names[index], tileIndexes: positions,
+                tileWidths: positions.map { tiles[$0].view.frame.width })
         }
         let input = ScreenColumnLayout.Input(columns: columns, tileHeight: height, padding: Appearance.interCellPadding,
             headerHeight: ScreenColumnLayout.headerHeight, columnGap: ScreenColumnLayout.columnGap, columnWidthMax: columnWidth)
@@ -623,16 +626,22 @@ class TilesView {
     }
 
     private static func applyScreenColumns(_ result: ScreenColumnLayout.Result, _ screens: [NSScreen], _ tiles: [(index: Int, view: TileView)], _ labelHeight: CGFloat) -> (CGFloat, CGFloat, CGFloat, [Int]) {
-        var viewsByIndex = [Int: TileView]()
-        for tile in tiles { viewsByIndex[tile.index] = tile.view }
-        for (index, origin) in result.origins {
-            guard let view = viewsByIndex[index] else { continue }
-            view.frame.origin = origin
-            if let width = result.widths[index] { assignIfDifferent(&view.frame.size.width, width) }
+        // `result` is keyed by POSITION in `tiles` (see `screenColumnResult`), so join it back to window
+        // indices by position — not by `tile.index`. Keying by window index made every lookup miss once a
+        // filter left the two index spaces unequal, so tiles kept stale origins and rendered off-screen
+        // (the app-filter "windows disappear" bug).
+        let windowIndexByPosition = tiles.map { $0.index }
+        var viewByWindowIndex = [Int: TileView]()
+        for tile in tiles { viewByWindowIndex[tile.index] = tile.view }
+        for placement in ScreenColumnLayout.placements(result, windowIndexByPosition: windowIndexByPosition) {
+            guard let view = viewByWindowIndex[placement.windowIndex] else { continue }
+            view.frame.origin = placement.origin
+            if let width = placement.width { assignIfDifferent(&view.frame.size.width, width) }
         }
-        rows = result.rows.map { $0.compactMap { viewsByIndex[$0] } }
-        for (rowIndex, row) in result.rows.enumerated() {
-            for index in row where index < Windows.list.count { Windows.list[index].rowIndex = rowIndex }
+        let rowsByWindowIndex = ScreenColumnLayout.rowsByWindowIndex(result, windowIndexByPosition: windowIndexByPosition)
+        rows = rowsByWindowIndex.map { $0.compactMap { viewByWindowIndex[$0] } }
+        for (rowIndex, row) in rowsByWindowIndex.enumerated() {
+            for windowIndex in row where windowIndex < Windows.list.count { Windows.list[windowIndex].rowIndex = rowIndex }
         }
         usingScreenColumns = true
         screenColumnScreens = screens
