@@ -44,6 +44,12 @@ enum WindowScreenMove {
     /// Space. Leave fullscreen, move the ordinary window onto the target screen, then enter
     /// fullscreen there: the new Space is created on whichever screen holds the window. A minimized
     /// window has no on-screen frame until it is restored.
+    ///
+    /// KNOWN LIMITATION (see WindowScreenMoveSpecs.md): this does not work for a native-fullscreen
+    /// window dropped on a non-main display mounted ABOVE the main one. On exit macOS returns the
+    /// window to the primary Space, and `SLSMoveWindowsToManagedSpace` refuses to relocate it off
+    /// that Space to another display's Space, so the position write is clamped back. Maximized
+    /// (non-native-fullscreen) windows and moves to the main display are unaffected.
     static func steps(isFullscreen: Bool, isMinimized: Bool, position: CGPoint) -> [Step] {
         var steps = [Step]()
         if isMinimized { steps.append(.deminiaturize) }
