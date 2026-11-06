@@ -28,34 +28,12 @@ fullscreen enter during that animation.
 
 ## Known limitation — native-fullscreen onto a non-main display mounted above the main one
 
-A **native-fullscreen** window (e.g. Chrome in real macOS fullscreen — *not* a merely maximized
-window like VS Code/Cursor, which lives on an ordinary Space and moves fine) cannot be reliably
-dragged onto a secondary display that sits **above** the main display in the arrangement. This is a
-macOS window-server limitation, not something this code can fix with the AX/CGS APIs:
-
-- Moving a fullscreen window needs `exitFullscreen → setPosition → enterFullscreen`. On exit, macOS
-  returns the window to its **origin** desktop Space — often the primary Space (`id 1`) — which is
-  usually not the one currently on screen.
-- `SLSMoveWindowsToManagedSpace` then **refuses to relocate that window off the primary Space onto
-  another display's Space** (it no-ops — verified even after making that Space visible via
-  `CGSManagedDisplaySetCurrentSpace`).
-- Because the Space never changes and the target display is above the main one (negative Quartz y),
-  the `setPosition` write is clamped back onto the source display, and `enterFullscreen` re-captures
-  the original screen. The move silently does nothing.
-
-What *does* work, and why the limitation is narrow:
-- Any window → the **main** display works (the position write to the main display's Space needs no
-  Space change).
-- **Non-fullscreen / maximized** windows work in every direction (they already sit on an ordinary,
-  movable Space).
-- So only the combination *native-fullscreen window* + *target display mounted above the main one*
-  is affected.
-
-Approaches that were tried and did not yield a reliable fix: verify-and-retry the position write;
-hop the window through the visible Space; force the window's Space current before moving; dismiss the
-switcher first so it stops holding its Space; and synthesizing a native title-bar drag (too fragile —
-app title-bar regions differ, e.g. Chrome's top is tabs). If macOS later allows relocating such a
-window, revisit `Window.joinDisplaySpace` / the fullscreen steps here.
+A **native-fullscreen** window (e.g. Chrome in real macOS fullscreen — not a merely maximized window
+like VS Code/Cursor) **intermittently** fails to drag onto a secondary display mounted **above** the
+main one: right after the fullscreen exit, the window server sometimes clamps the negative-Quartz-y
+position write back onto the source display. It is a macOS behavior, not fixable from here, and it is
+**not** a Spaces issue. Full investigation, measurements, and the approaches tried (and why the
+earlier "Space 1" explanation was wrong) are in `FullscreenCrossDisplayMoveLimitation.md`.
 
 ---
 
